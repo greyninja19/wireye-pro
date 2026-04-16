@@ -27,7 +27,6 @@ WireEye Pro is a web-based forensics tool that transforms raw packet captures in
 
     Analysis: Automated protocol mapping and entropy-based anomaly detection.
 💻 Installation
-
 git clone https://github.com/YOUR_USERNAME/WireEye-Pro.git
 cd WireEye-Pro
 pip install -r requirements.txt
