@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WireEye Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap');
+
+:root {
+  --bg:       #0a0e14;
+  --surface:  #0f1419;
+  --card:     #141a22;
+  --border:   #1e2733;
+  --border2:  #2a3441;
+  --text:     #cdd6e0;
+  --muted:    #5a6a7a;
+  --accent:   #4dabf7;
+  --green:    #37b24d;
+  --yellow:   #f59f00;
+  --orange:   #e8590c;
+  --red:      #f03e3e;
+  --purple:   #9c6fe4;
+  --cyan:     #22b8cf;
+  --r: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; font-size: 14px; overflow-x: hidden; }
+
+/* ── Scanline overlay ─────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.03) 2px, rgba(0,0,0,.03) 4px);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: .75rem 1.5rem;
+  display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { font-size: 1.25rem; font-weight: 800; letter-spacing: -1px; color: var(--accent); }
+.logo span { color: var(--cyan); }
+.logo-badge { font-size: 9px; font-weight: 700; background: var(--accent); color: #000; padding: 2px 6px; border-radius: 4px; letter-spacing: .04em; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.status-text { font-size: 11px; color: var(--muted); }
+
+/* ── Upload zone ──────────────────────────────────────────────────────────── */
+.upload-zone {
+  max-width: 780px; margin: 2rem auto;
+  border: 1.5px dashed var(--border2); border-radius: 14px;
+  padding: 3rem 2rem; text-align: center;
+  cursor: pointer; transition: all .2s;
+  background: var(--surface);
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: #0f1c2a; }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.upload-icon { font-size: 3rem; margin-bottom: 1rem; opacity: .6; }
+.upload-title { font-size: 1.1rem; font-weight: 700; margin-bottom: .5rem; }
+.upload-sub { color: var(--muted); font-size: 13px; }
+.file-types { display: flex; gap: 8px; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+.ft-chip { background: var(--card); border: 1px solid var(--border2); border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+
+/* ── Progress ─────────────────────────────────────────────────────────────── */
+.progress-wrap { max-width: 780px; margin: 0 auto 1rem; display: none; }
+.progress-wrap.show { display: block; }
+.progress-bar-track { background: var(--card); border-radius: 99px; height: 4px; overflow: hidden; margin-bottom: 8px; }
+.progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--cyan)); border-radius: 99px; width: 0; transition: width .3s; animation: progress-anim 1.5s ease-in-out infinite; }
+@keyframes progress-anim { 0%{width:0%} 40%{width:60%} 100%{width:95%} }
+.progress-label { font-size: 12px; color: var(--muted); text-align: center; font-family: 'JetBrains Mono', monospace; }
+
+/* ── Main layout ──────────────────────────────────────────────────────────── */
+.main { max-width: 1200px; margin: 0 auto; padding: 0 1rem 2rem; display: none; }
+.main.show { display: block; }
+
+/* ── Risk banner ─────────────────────────────────────────────────────────── */
+.risk-banner {
+  border-radius: 12px; padding: 1.25rem 1.75rem;
+  display: flex; align-items: center; gap: 2rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid transparent;
+}
+.rb-clean    { background: #0a1f12; border-color: #37b24d30; }
+.rb-low      { background: #1a1600; border-color: #f59f0030; }
+.rb-medium   { background: #1a1000; border-color: #e8590c30; }
+.rb-high     { background: #1a0808; border-color: #f03e3e30; }
+.rb-critical { background: #1a0808; border-color: #f03e3e80; animation: crit-glow 2s infinite; }
+@keyframes crit-glow { 0%,100%{box-shadow:0 0 0 0 #f03e3e20} 50%{box-shadow:0 0 20px 4px #f03e3e30} }
+
+.risk-score-num { font-size: 3rem; font-weight: 800; line-height: 1; }
+.risk-label-txt { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+.risk-meta-txt  { font-size: 12px; color: var(--muted); }
+.risk-right     { margin-left: auto; display: flex; gap: 1.5rem; }
+.risk-stat      { text-align: center; }
+.risk-stat .n   { font-size: 1.4rem; font-weight: 700; }
+.risk-stat .l   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.tab-btn {
+  flex: 1; min-width: 90px; padding: 8px 12px; border-radius: 7px; border: none;
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .15s; font-family: 'Syne', sans-serif;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); background: var(--card); }
+.tab-btn.active { background: var(--card); color: var(--accent); border: 1px solid var(--border2); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ── Cards & Grid ────────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 1rem; margin-bottom: 1rem; }
+@media(max-width:800px) { .grid-2,.grid-3,.grid-4 { grid-template-columns:1fr 1fr; } }
+@media(max-width:500px) { .grid-2,.grid-3,.grid-4 { grid-template-columns:1fr; } }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem 1.25rem; margin-bottom: 0; }
+.card-title { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: .75rem; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem; }
+.stat-card .n { font-size: 1.6rem; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+.stat-card .l { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { padding: 7px 10px; text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; background: var(--surface); border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #ffffff06; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.badge-critical { background: #2d0808; color: var(--red);    border: 1px solid #f03e3e40; }
+.badge-high     { background: #2d1400; color: var(--orange); border: 1px solid #e8590c40; }
+.badge-medium   { background: #2d2200; color: var(--yellow); border: 1px solid #f59f0040; }
+.badge-low      { background: #0d2240; color: var(--accent); border: 1px solid #4dabf740; }
+.badge-ok       { background: #0a1f12; color: var(--green);  border: 1px solid #37b24d40; }
+.badge-info     { background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+
+/* ── Bar ─────────────────────────────────────────────────────────────────── */
+.bar-wrap { display: flex; align-items: center; gap: 8px; }
+.bar-track { flex: 1; background: var(--surface); border-radius: 3px; height: 6px; overflow: hidden; min-width: 60px; }
+.bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+.bar-pct { font-size: 11px; color: var(--muted); min-width: 36px; text-align: right; }
+
+/* ── Timeline chart ──────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; height: 180px; }
+
+/* ── Threat list ─────────────────────────────────────────────────────────── */
+.threat-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 14px; align-items: flex-start;
+}
+.threat-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+.threat-label { font-weight: 700; font-size: 14px; margin-bottom: 3px; }
+.threat-detail { font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+.threat-src { font-size: 11px; color: var(--accent); margin-top: 4px; }
+
+/* ── Flow row ────────────────────────────────────────────────────────────── */
+.flow-arrow { color: var(--muted); padding: 0 4px; }
+
+/* ── Report tab ──────────────────────────────────────────────────────────── */
+.report-actions { display: flex; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+.btn { padding: 8px 18px; border-radius: 7px; border: 1px solid var(--border2); background: var(--card); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: 'Syne', sans-serif; }
+.btn:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+.btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+.btn-primary:hover { opacity: .85; color: #000; }
+.report-preview { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.8; color: var(--text); white-space: pre-wrap; max-height: 500px; overflow-y: auto; }
+
+/* ── Endpoint map ────────────────────────────────────────────────────────── */
+.ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 8px; }
+.ep-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.ep-ip { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--accent); }
+.ep-role { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.ep-stats { display: flex; gap: 12px; margin-top: 8px; }
+.ep-stat .v { font-size: 13px; font-weight: 700; }
+.ep-stat .l { font-size: 10px; color: var(--muted); }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">Wire<span>Eye</span></span>
+  <span class="logo-badge">PRO</span>
+  <span style="color:var(--muted);font-size:12px;margin-left:4px">PCAP Forensics Platform</span>
+  <div class="header-right">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Ready</span>
+  </div>
+</header>
+
+<!-- Upload -->
+<div id="uploadSection" style="padding:2rem 1rem">
+  <div class="upload-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".pcap,.pcapng,.cap" />
+    <div class="upload-icon">📡</div>
+    <div class="upload-title">Drop your PCAP file here</div>
+    <div class="upload-sub">or click to browse — supports Wireshark captures</div>
+    <div class="file-types">
+      <span class="ft-chip">.pcap</span>
+      <span class="ft-chip">.pcapng</span>
+      <span class="ft-chip">.cap</span>
+    </div>
+  </div>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">Uploading capture...</div>
+  </div>
+</div>
+
+<!-- Results -->
+<div class="main" id="mainResults">
+
+  <!-- Risk Banner -->
+  <div class="risk-banner" id="riskBanner">
+    <div>
+      <div class="risk-score-num" id="riskScore">–</div>
+      <div class="risk-label-txt" id="riskLabel">–</div>
+      <div class="risk-meta-txt" id="riskMeta">–</div>
+    </div>
+    <div class="risk-right">
+      <div class="risk-stat"><div class="n" id="rStat1">–</div><div class="l">Packets</div></div>
+      <div class="risk-stat"><div class="n" id="rStat2">–</div><div class="l">Threats</div></div>
+      <div class="risk-stat"><div class="n" id="rStat3">–</div><div class="l">Duration</div></div>
+      <div class="risk-stat"><div class="n" id="rStat4">–</div><div class="l">Endpoints</div></div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('overview')">📊 Overview</button>
+    <button class="tab-btn" onclick="showTab('threats')">🚨 Threats</button>
+    <button class="tab-btn" onclick="showTab('traffic')">🌐 Traffic</button>
+    <button class="tab-btn" onclick="showTab('protocols')">📡 Protocols</button>
+    <button class="tab-btn" onclick="showTab('dns')">🔍 DNS</button>
+    <button class="tab-btn" onclick="showTab('http')">🌍 HTTP</button>
+    <button class="tab-btn" onclick="showTab('endpoints')">🖥 Endpoints</button>
+    <button class="tab-btn" onclick="showTab('arp')">📶 ARP</button>
+    <button class="tab-btn" onclick="showTab('report')">📄 Report</button>
+  </div>
+
+  <!-- ── OVERVIEW ───────────────────────────────────────────────────────── -->
+  <div class="tab-pane active" id="tab-overview">
+    <div class="grid-4" id="overviewStats"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Traffic timeline (packets/sec)</div>
+        <div class="chart-wrap"><canvas id="timelineChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Protocol distribution</div>
+        <div class="chart-wrap"><canvas id="protoChart"></canvas></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Top source IPs</div>
+        <div id="topSrcTable"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Top destination ports</div>
+        <div id="topPortTable"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── THREATS ────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-threats">
+    <div class="grid-3" id="threatStats"></div>
+    <div id="threatList"></div>
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title">Suspicious port usage</div>
+      <div class="tbl-wrap" id="suspPortTable"></div>
+    </div>
+  </div>
+
+  <!-- ── TRAFFIC ────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-traffic">
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">Top conversations</div>
+      <div class="tbl-wrap" id="convTable"></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Large file transfers (&gt;10KB per packet)</div>
+        <div id="largeXferTable"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">TCP flag distribution</div>
+        <div class="chart-wrap"><canvas id="flagsChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PROTOCOLS ──────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-protocols">
+    <div class="card">
+      <div class="card-title">Protocol breakdown</div>
+      <div id="protoTable"></div>
+    </div>
+    <div style="margin-top:1rem">
+      <div class="card">
+        <div class="card-title">Port → service map (all captured ports)</div>
+        <div class="tbl-wrap" id="allPortsTable"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DNS ────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-dns">
+    <div class="grid-2" id="dnsStats"></div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">Most queried domains</div>
+      <div class="tbl-wrap" id="dnsTopTable"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Recent DNS queries (raw)</div>
+      <div class="tbl-wrap" id="dnsRawTable"></div>
+    </div>
+  </div>
+
+  <!-- ── HTTP ───────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-http">
+    <div class="card">
+      <div class="card-title">HTTP requests captured</div>
+      <div class="tbl-wrap" id="httpTable"></div>
+    </div>
+  </div>
+
+  <!-- ── ENDPOINTS ──────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-endpoints">
+    <div class="ep-grid" id="endpointGrid"></div>
+  </div>
+
+  <!-- ── ARP ────────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-arp">
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">🚨 ARP spoofing events</div>
+      <div id="arpSpoofTable"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">ARP table (IP → MAC)</div>
+      <div class="tbl-wrap" id="arpTable"></div>
+    </div>
+  </div>
+
+  <!-- ── REPORT ─────────────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="tab-report">
+    <div class="card">
+      <div class="card-title">Automated forensic report</div>
+      <div class="report-actions">
+        <button class="btn btn-primary" onclick="downloadHtml()">⬇ Download HTML Report</button>
+        <button class="btn" onclick="downloadJson()">⬇ Export JSON</button>
+        <button class="btn" onclick="downloadTxt()">⬇ Plain Text Report</button>
+        <button class="btn" onclick="window.print()">🖨 Print</button>
+      </div>
+      <div class="report-preview" id="reportPreview">Generate a scan above to produce a report.</div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+let G = null; // global analysis data
+let timelineChart, protoChart, flagsChart;
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function showTab(id) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('drag'); }));
+['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('drag'); }));
+dropZone.addEventListener('drop', ev => { const f = ev.dataTransfer.files[0]; if(f) uploadFile(f); });
+fileInput.addEventListener('change', () => { if(fileInput.files[0]) uploadFile(fileInput.files[0]); });
+
+const PROGRESS_MSGS = [
+  'Parsing packet headers…',
+  'Extracting layer 3/4 metadata…',
+  'Resolving IP conversations…',
+  'Analysing DNS queries…',
+  'Running threat signatures…',
+  'Checking ARP table for spoofing…',
+  'Scoring risk level…',
+  'Building forensic report…',
+];
+
+async function uploadFile(file) {
+  document.getElementById('statusDot').style.background = 'var(--yellow)';
+  document.getElementById('statusText').textContent = 'Analysing…';
+  document.getElementById('progressWrap').classList.add('show');
+  document.getElementById('mainResults').classList.remove('show');
+
+  let msgIdx = 0;
+  const msgInterval = setInterval(() => {
+    document.getElementById('progressLabel').textContent = PROGRESS_MSGS[msgIdx % PROGRESS_MSGS.length];
+    msgIdx++;
+  }, 900);
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body: fd });
+    const data = await res.json();
+    clearInterval(msgInterval);
+    document.getElementById('progressWrap').classList.remove('show');
+
+    if (data.error) {
+      alert('Error: ' + data.error);
+      document.getElementById('statusDot').style.background = 'var(--red)';
+      document.getElementById('statusText').textContent = 'Error';
+      return;
+    }
+
+    G = data;
+    renderAll(data);
+    document.getElementById('uploadSection').style.display = 'none';
+    document.getElementById('mainResults').classList.add('show');
+    document.getElementById('statusDot').style.background = 'var(--green)';
+    document.getElementById('statusText').textContent = 'Analysis complete';
+  } catch(e) {
+    clearInterval(msgInterval);
+    alert('Network error: ' + e.message);
+    document.getElementById('statusDot').style.background = 'var(--red)';
+    document.getElementById('statusText').textContent = 'Error';
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  const u = ['B','KB','MB','GB'];
+  let i = 0;
+  while (b >= 1024 && i < 3) { b /= 1024; i++; }
+  return b.toFixed(1) + ' ' + u[i];
+}
+function fmtNum(n) { return (n||0).toLocaleString(); }
+function scoreColor(s) {
+  if (s < 30) return 'var(--green)';
+  if (s < 60) return 'var(--yellow)';
+  if (s < 80) return 'var(--orange)';
+  return 'var(--red)';
+}
+function riskClass(s) {
+  if (s === 0) return 'rb-clean';
+  if (s < 30)  return 'rb-low';
+  if (s < 60)  return 'rb-medium';
+  if (s < 80)  return 'rb-high';
+  return 'rb-critical';
+}
+function sevBadge(s) {
+  const m = {'CRITICAL':'badge-critical','HIGH':'badge-high','MEDIUM':'badge-medium','LOW':'badge-low'};
+  return `<span class="badge ${m[s]||'badge-info'}">${s}</span>`;
+}
+function threatIcon(t) {
+  const icons = { port_scan:'🔍', syn_flood:'🌊', arp_spoof:'👥', dns_tunnel:'🕳',
+    ssh_brute:'🔑', rdp_brute:'🖥', icmp_flood:'📡', cleartext_creds:'🔓',
+    smb_recon:'📂', lateral_movement:'↔️', c2_beacon:'📻', data_exfil:'📤' };
+  return icons[t] || '⚠️';
+}
+
+// ── Render all ───────────────────────────────────────────────────────────────
+function renderAll(d) {
+  renderRiskBanner(d);
+  renderOverview(d);
+  renderThreats(d);
+  renderTraffic(d);
+  renderProtocols(d);
+  renderDNS(d);
+  renderHTTP(d);
+  renderEndpoints(d);
+  renderARP(d);
+  renderReport(d);
+}
+
+// ── Risk Banner ──────────────────────────────────────────────────────────────
+function renderRiskBanner(d) {
+  const score = d.risk?.score || 0;
+  const col = scoreColor(score);
+  const el = document.getElementById('riskBanner');
+  el.className = 'risk-banner ' + riskClass(score);
+  document.getElementById('riskScore').textContent = score;
+  document.getElementById('riskScore').style.color = col;
+  document.getElementById('riskLabel').textContent = d.risk?.label || '–';
+  document.getElementById('riskLabel').style.color = col;
+  document.getElementById('riskMeta').textContent =
+    `${d.meta?.filename} · ${d.meta?.capture_start} → ${d.meta?.capture_end}`;
+  document.getElementById('rStat1').textContent = fmtNum(d.meta?.total_packets);
+  document.getElementById('rStat2').textContent = d.risk?.threat_count || 0;
+  document.getElementById('rStat3').textContent = (d.meta?.duration_sec || 0).toFixed(1) + 's';
+  document.getElementById('rStat4').textContent = (d.endpoints || []).length;
+}
+
+// ── Overview ─────────────────────────────────────────────────────────────────
+function renderOverview(d) {
+  const m = d.meta || {};
+  const stats = [
+    { n: fmtNum(m.total_packets), l: 'Total packets', c: 'var(--accent)' },
+    { n: fmtBytes(m.total_bytes),  l: 'Total data',   c: 'var(--cyan)' },
+    { n: fmtNum((d.protocols||[]).length), l: 'Protocols',  c: 'var(--purple)' },
+    { n: fmtNum((d.threats||[]).length),   l: 'Threat events', c: 'var(--red)' },
+  ];
+  document.getElementById('overviewStats').innerHTML = stats.map(s =>
+    `<div class="stat-card"><div class="n" style="color:${s.c}">${s.n}</div><div class="l">${s.l}</div></div>`
+  ).join('');
+
+  // Timeline chart
+  const tl = d.timeline || [];
+  if (tl.length && timelineChart) { timelineChart.destroy(); }
+  const ctx1 = document.getElementById('timelineChart').getContext('2d');
+  timelineChart = new Chart(ctx1, {
+    type: 'line',
+    data: {
+      labels: tl.map(t => t.t + 's'),
+      datasets: [{ data: tl.map(t => t.count), borderColor: '#4dabf7', borderWidth: 1.5,
+        backgroundColor: 'rgba(77,171,247,.08)', fill: true, tension: .3, pointRadius: 0 }]
+    },
+    options: { plugins:{legend:{display:false}}, scales:{
+      x:{ticks:{color:'#5a6a7a',font:{size:10},maxTicksLimit:8},grid:{color:'#1e2733'}},
+      y:{ticks:{color:'#5a6a7a',font:{size:10}},grid:{color:'#1e2733'}} },
+      animation: false
+    }
+  });
+
+  // Protocol donut
+  const protos = (d.protocols || []).slice(0, 8);
+  const COLORS = ['#4dabf7','#22b8cf','#37b24d','#f59f00','#e8590c','#9c6fe4','#f03e3e','#5a6a7a'];
+  if (protoChart) protoChart.destroy();
+  const ctx2 = document.getElementById('protoChart').getContext('2d');
+  protoChart = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: protos.map(p => p.name),
+      datasets: [{ data: protos.map(p => p.count), backgroundColor: COLORS, borderWidth: 2, borderColor: '#141a22' }]
+    },
+    options: { plugins:{legend:{position:'right',labels:{color:'#cdd6e0',font:{size:11},padding:10}}},
+      animation: false }
+  });
+
+  // Top src IPs
+  document.getElementById('topSrcTable').innerHTML = tableHTML(
+    ['IP','Packets','Type'],
+    (d.top_src_ips||[]).slice(0,10).map(e => [
+      `<span class="mono" style="color:var(--accent)">${e.private?'🏠':'🌐'} ${e.ip}</span>`,
+      fmtNum(e.count),
+      e.private ? '<span class="badge badge-info">Internal</span>' : '<span class="badge badge-ok">External</span>'
+    ])
+  );
+
+  // Top ports
+  document.getElementById('topPortTable').innerHTML = tableHTML(
+    ['Port','Service','Packets'],
+    (d.top_dst_ports||[]).slice(0,10).map(p => [
+      `<span class="mono">${p.port}</span>`,
+      p.service,
+      `<div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,(p.count/(d.meta?.total_packets||1))*100*20)}%"></div></div><span class="bar-pct">${fmtNum(p.count)}</span></div>`
+    ])
+  );
+}
+
+// ── Threats ───────────────────────────────────────────────────────────────────
+function renderThreats(d) {
+  const threats = d.threats || [];
+  const critical = threats.filter(t=>t.severity==='CRITICAL').length;
+  const high     = threats.filter(t=>t.severity==='HIGH').length;
+  const medium   = threats.filter(t=>t.severity==='MEDIUM').length;
+
+  document.getElementById('threatStats').innerHTML = `
+    <div class="stat-card"><div class="n" style="color:var(--red)">${critical}</div><div class="l">Critical</div></div>
+    <div class="stat-card"><div class="n" style="color:var(--orange)">${high}</div><div class="l">High</div></div>
+    <div class="stat-card"><div class="n" style="color:var(--yellow)">${medium}</div><div class="l">Medium</div></div>`;
+
+  if (!threats.length) {
+    document.getElementById('threatList').innerHTML = `<div class="card" style="text-align:center;padding:2rem;color:var(--green)">✅ No threat signatures matched in this capture.</div>`;
+  } else {
+    document.getElementById('threatList').innerHTML = threats.map(t => `
+      <div class="threat-item">
+        <div class="threat-icon">${threatIcon(t.type)}</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            ${sevBadge(t.severity)}
+            <span class="threat-label">${t.label}</span>
+          </div>
+          <div class="threat-detail">${t.detail}</div>
+          <div class="threat-src">Source: ${t.src}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Suspicious ports
+  const sp = d.suspicious_ports || [];
+  document.getElementById('suspPortTable').innerHTML = sp.length ? tableHTML(
+    ['Port','Known malicious use','Packets seen'],
+    sp.map(p => [`<span class="mono" style="color:var(--red)">${p.port}</span>`, p.label, fmtNum(p.count)])
+  ) : '<div style="padding:1rem;color:var(--green)">No suspicious port traffic detected.</div>';
+}
+
+// ── Traffic ───────────────────────────────────────────────────────────────────
+function renderTraffic(d) {
+  document.getElementById('convTable').innerHTML = tableHTML(
+    ['Source','','Destination','Packets','Bytes','Ports'],
+    (d.conversations||[]).map(c => [
+      `<span class="mono" style="color:var(--accent)">${c.a}</span>`,
+      `<span class="flow-arrow">↔</span>`,
+      `<span class="mono" style="color:var(--orange)">${c.b}</span>`,
+      fmtNum(c.packets),
+      fmtBytes(c.bytes),
+      (c.ports||[]).slice(0,5).join(', ')
+    ])
+  );
+
+  const lx = d.large_transfers || [];
+  document.getElementById('largeXferTable').innerHTML = lx.length ? tableHTML(
+    ['Source','Destination','Packet size'],
+    lx.map(x => [`<span class="mono">${x.src}</span>`,`<span class="mono">${x.dst}</span>`,fmtBytes(x.size)])
+  ) : '<div style="padding:1rem;color:var(--muted)">None detected.</div>';
+
+  // TCP flags chart
+  const flags = d.tcp_flags || {};
+  if (flagsChart) flagsChart.destroy();
+  const ctx = document.getElementById('flagsChart').getContext('2d');
+  const FCOL = { SYN:'#4dabf7', ACK:'#37b24d', FIN:'#22b8cf', RST:'#f03e3e', PSH:'#f59f00' };
+  flagsChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(flags),
+      datasets: [{ data: Object.values(flags), backgroundColor: Object.keys(flags).map(f=>FCOL[f]||'#5a6a7a'), borderRadius: 4 }]
+    },
+    options: { plugins:{legend:{display:false}}, scales:{
+      x:{ticks:{color:'#5a6a7a',font:{size:11}},grid:{display:false}},
+      y:{ticks:{color:'#5a6a7a',font:{size:10}},grid:{color:'#1e2733'}} },
+      animation: false
+    }
+  });
+}
+
+// ── Protocols ─────────────────────────────────────────────────────────────────
+function renderProtocols(d) {
+  const protos = d.protocols || [];
+  const total  = protos.reduce((s,p)=>s+p.count,0)||1;
+  document.getElementById('protoTable').innerHTML = protos.map(p => `
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="width:64px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text)">${p.name}</span>
+      <div class="bar-track" style="flex:1"><div class="bar-fill" style="width:${p.pct}%"></div></div>
+      <span class="bar-pct">${fmtNum(p.count)}</span>
+      <span style="width:40px;text-align:right;color:var(--muted);font-size:12px">${p.pct}%</span>
+    </div>`).join('');
+
+  document.getElementById('allPortsTable').innerHTML = tableHTML(
+    ['Port','Service / Role','Packets'],
+    (d.top_dst_ports||[]).map(p => [
+      `<span class="mono">${p.port}</span>`,
+      p.service,
+      fmtNum(p.count)
+    ])
+  );
+}
+
+// ── DNS ───────────────────────────────────────────────────────────────────────
+function renderDNS(d) {
+  const dns = d.dns || {};
+  const queries  = dns.queries || [];
+  const domains  = dns.top_domains || [];
+  document.getElementById('dnsStats').innerHTML = `
+    <div class="stat-card"><div class="n" style="color:var(--purple)">${fmtNum(queries.length)}</div><div class="l">DNS queries</div></div>
+    <div class="stat-card"><div class="n" style="color:var(--cyan)">${fmtNum(domains.length)}</div><div class="l">Unique domains</div></div>`;
+
+  document.getElementById('dnsTopTable').innerHTML = tableHTML(
+    ['Domain','Queries','Note'],
+    domains.slice(0,20).map(d => {
+      const flag = d.domain.length > 40 ? '<span class="badge badge-high">LONG ⚠</span>' : '';
+      return [`<span class="mono" style="color:var(--purple)">${d.domain}</span>`, d.count, flag];
+    })
+  );
+
+  document.getElementById('dnsRawTable').innerHTML = tableHTML(
+    ['From','To','Query'],
+    queries.slice(0,30).map(q => [
+      `<span class="mono">${q.src}</span>`,
+      `<span class="mono">${q.dst}</span>`,
+      `<span class="mono" style="color:var(--cyan)">${q.query}</span>`
+    ])
+  );
+}
+
+// ── HTTP ───────────────────────────────────────────────────────────────────────
+function renderHTTP(d) {
+  const reqs = (d.http?.requests || []);
+  document.getElementById('httpTable').innerHTML = reqs.length ? tableHTML(
+    ['Method','Host','Path','From','Size'],
+    reqs.map(r => [
+      `<span class="badge ${r.method==='GET'?'badge-ok':r.method==='POST'?'badge-high':'badge-info'}">${r.method}</span>`,
+      `<span class="mono">${r.host}</span>`,
+      `<span class="mono" style="color:var(--muted);font-size:11px">${r.path.slice(0,60)}</span>`,
+      `<span class="mono">${r.src}</span>`,
+      fmtBytes(r.size)
+    ])
+  ) : '<div style="padding:1rem;color:var(--muted)">No HTTP requests captured (traffic may be HTTPS/encrypted).</div>';
+}
+
+// ── Endpoints ─────────────────────────────────────────────────────────────────
+function renderEndpoints(d) {
+  const eps = d.endpoints || [];
+  document.getElementById('endpointGrid').innerHTML = eps.map(e => `
+    <div class="ep-card">
+      <div class="ep-ip">${e.private?'🏠':'🌐'} ${e.ip}</div>
+      <div class="ep-role">${e.role}</div>
+      <div class="ep-stats">
+        <div class="ep-stat"><div class="v" style="color:var(--accent)">${fmtNum(e.sent)}</div><div class="l">Sent</div></div>
+        <div class="ep-stat"><div class="v" style="color:var(--green)">${fmtNum(e.received)}</div><div class="l">Received</div></div>
+      </div>
+    </div>`).join('');
+}
+
+// ── ARP ───────────────────────────────────────────────────────────────────────
+function renderARP(d) {
+  const arp = d.arp || {};
+  const spoofs = arp.spoof_events || [];
+  document.getElementById('arpSpoofTable').innerHTML = spoofs.length ? tableHTML(
+    ['IP','Old MAC','','New MAC'],
+    spoofs.map(s => [
+      `<span class="mono" style="color:var(--red)">${s.ip}</span>`,
+      `<span class="mono" style="font-size:11px">${s.old_mac}</span>`,
+      '→',
+      `<span class="mono" style="color:var(--red);font-size:11px">${s.new_mac}</span>`
+    ])
+  ) : '<div style="padding:1rem;color:var(--green)">✅ No ARP spoofing detected.</div>';
+
+  document.getElementById('arpTable').innerHTML = tableHTML(
+    ['IP Address','MAC Address'],
+    (arp.table||[]).map(r => [`<span class="mono">${r.ip}</span>`,`<span class="mono" style="color:var(--muted)">${r.mac}</span>`])
+  );
+}
+
+// ── Report ────────────────────────────────────────────────────────────────────
+function renderReport(d) {
+  const m = d.meta || {}, risk = d.risk || {};
+  const threats = d.threats || [];
+  const protos = d.protocols || [];
+  const dns = d.dns || {};
+
+  let txt = [
+    '═'.repeat(60),
+    '  WIREEYE PRO — FORENSIC ANALYSIS REPORT',
+    `  Generated: ${new Date().toUTCString()}`,
+    '═'.repeat(60),
+    '',
+    `  Capture file : ${m.filename || '–'}`,
+    `  File size    : ${fmtBytes(m.file_size || 0)}`,
+    `  Packets      : ${fmtNum(m.total_packets)}`,
+    `  Total data   : ${fmtBytes(m.total_bytes || 0)}`,
+    `  Capture start: ${m.capture_start || '–'}`,
+    `  Capture end  : ${m.capture_end || '–'}`,
+    `  Duration     : ${(m.duration_sec||0).toFixed(1)}s`,
+    '',
+    '─'.repeat(60),
+    `  RISK SCORE: ${risk.score}/100  ·  ${risk.label}`,
+    `  Threat types: ${risk.threat_count || 0}`,
+    '─'.repeat(60),
+    '',
+    '  THREATS DETECTED:',
+    ...(threats.length
+      ? threats.map(t => `  [${t.severity}] ${t.label}\n         ${t.detail}\n         Source: ${t.src}`)
+      : ['  None']),
+    '',
+    '  PROTOCOLS:',
+    ...protos.slice(0,8).map(p => `  ${p.name.padEnd(10)} ${String(p.count).padStart(8)}  (${p.pct}%)`),
+    '',
+    '  TOP SOURCE IPs:',
+    ...(d.top_src_ips||[]).slice(0,8).map(e => `  ${e.ip.padEnd(20)} ${String(e.sent||e.count).padStart(6)} packets`),
+    '',
+    '  TOP DNS QUERIES:',
+    ...dns.top_domains?.slice(0,10).map(d => `  ${d.domain.padEnd(50)} x${d.count}`) || ['  (none)'],
+    '',
+    '═'.repeat(60),
+    '  For authorised forensic use only · WireEye Pro',
+  ].join('\n');
+
+  document.getElementById('reportPreview').textContent = txt;
+}
+
+function downloadJson() {
+  if (!G) return;
+  const blob = new Blob([JSON.stringify(G, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `wireeye_${G.meta?.filename||'report'}.json`; a.click();
+}
+
+function downloadTxt() {
+  if (!G) return;
+  const txt = document.getElementById('reportPreview').textContent;
+  const blob = new Blob([txt], {type:'text/plain'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `wireeye_${G.meta?.filename||'report'}.txt`; a.click();
+}
+
+function downloadHtml() {
+  if (!G) return;
+  fetch('/api/report_html', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(G)
+  }).then(r => r.blob()).then(blob => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `wireeye_${G.meta?.filename||'report'}.html`; a.click();
+  }).catch(() => alert('HTML report generation failed.'));
+}
+
+// ── Table helper ──────────────────────────────────────────────────────────────
+function tableHTML(headers, rows) {
+  if (!rows.length) return '<div style="padding:1rem;color:var(--muted)">No data.</div>';
+  return `<table>
+    <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ── Drag & drop on window ─────────────────────────────────────────────────────
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.match(/\.(pcap|pcapng|cap)$/i)) uploadFile(f);
+});
+</script>
+</body>
+</html>
